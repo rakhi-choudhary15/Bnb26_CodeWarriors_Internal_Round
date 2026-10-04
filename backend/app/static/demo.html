@@ -175,6 +175,7 @@
         <dt>Blueprint</dt><dd>REAL &mdash; stage list derived from the parsed intent</dd>
         <dt>Concepts / hooks / script / shots</dt><dd>REAL &mdash; validated skill schemas, stored per step</dd>
         <dt>Ownership</dt><dd>REAL &mdash; every read is scoped; another owner gets 404</dd>
+        <dt>Model provider</dt><dd><span id="aiProvider" class="badge ai">checking</span> <span class="muted">reported by <code>/api/health</code>, never a key</span></dd>
         <dt>Video understanding &amp; render</dt><dd>Not in this demo &mdash; needs FFmpeg and uploaded media</dd>
       </dl>
       <p class="muted">Every stage output on this page came back from the API through Pydantic validation and rule checks. Nothing here is hard-coded sample data.</p>
@@ -269,10 +270,14 @@
       var h = res.data;
       var badge = $("healthBadge");
       var skills = (h.skills && (h.skills.real || h.skills.registered)) || 0;
-      badge.textContent = h.status + " · " + skills + " skills";
-      badge.className = "badge media";
-      if (h.ffmpeg && h.ffmpeg.available === false) {
-        badge.textContent += " · no ffmpeg";
+      var ai = h.ai || {};
+      badge.textContent = (ai.provider || "unknown") + " · " + skills + " skills";
+      badge.className = ai.available ? "badge" : "badge warn";
+      if (h.media && h.media.ok === false) badge.textContent += " · no ffmpeg";
+      var provider = $("aiProvider");
+      if (provider) {
+        provider.textContent = (ai.provider || "unknown") + (ai.model ? " · " + ai.model : "");
+        provider.className = ai.available ? "badge ai" : "badge warn";
       }
     }).catch(function () {
       $("healthBadge").textContent = "API unreachable";

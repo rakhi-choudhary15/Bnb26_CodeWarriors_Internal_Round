@@ -12,6 +12,7 @@ from typing import Any
 from fastapi import APIRouter
 from sqlalchemy import text
 
+from app.ai.gateway import get_gateway
 from app.api.deps import DbSession
 from app.core.config import settings
 from app.core.logging import get_logger
@@ -30,10 +31,26 @@ def health(db: DbSession) -> dict[str, Any]:
     registered = list_specs()
     missing_media = _missing_media()
     degraded = not database_ok or bool(missing_media)
+    ai = get_gateway().status()
     return {
         "status": "degraded" if degraded else "ok",
         "service": settings.app_env,
         "demo_mode": settings.demo_mode,
+        # Which provider actually answered is the difference between a real demo
+        # and a scripted one, so it is reported (never the key itself).
+        "ai": {
+            "provider": ai.get("provider"),
+            "available": bool(ai.get("available")),
+            # The dev provider answers locally, so naming a hosted model for it
+            # would overstate what ran.
+            "model": (
+                settings.llm_model_primary
+                if ai.get("available") and ai.get("provider") != "dev"
+                else None
+            ),
+            "cache_hits": ai.get("cache_hits", 0),
+            "fallbacks": ai.get("fallbacks", 0),
+        },
         "database": {
             "ok": database_ok,
             "dialect": db.bind.dialect.name if db.bind is not None else "unknown",
