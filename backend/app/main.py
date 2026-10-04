@@ -18,7 +18,17 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.api import errors
-from app.api.routes import assets, creation, health, jobs, projects
+from app.api.routes import (
+    assets,
+    creation,
+    genome,
+    health,
+    intelligence,
+    jobs,
+    platforms,
+    projects,
+    references,
+)
 from app.core.config import settings
 from app.core.db import migrate_to_head
 from app.core.jobs import get_queue
@@ -31,7 +41,7 @@ logger = get_logger(__name__)
 API_PREFIX = "/api"
 
 DESCRIPTION = """
-Intent-driven creation for short-form video.
+GenZCreators: intent-driven creation for short-form video.
 
 Authenticate with `Authorization: Bearer <Supabase JWT>`; `/api/health` is the
 only open route. Long-running work returns `202 {job_id}` — poll `GET /api/jobs/:id`.
@@ -64,7 +74,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 def create_app() -> FastAPI:
     app = FastAPI(
-        title="CreatorAI API",
+        title="GenZCreators API",
         version="0.1.0",
         description=DESCRIPTION,
         lifespan=lifespan,
@@ -88,6 +98,10 @@ def create_app() -> FastAPI:
     app.include_router(projects.router)
     app.include_router(assets.router)
     app.include_router(jobs.router)
+    app.include_router(genome.router)
+    app.include_router(intelligence.router)
+    app.include_router(references.router)
+    app.include_router(platforms.router)
     _mount_demo(app)
     return app
 
@@ -104,8 +118,7 @@ def _mount_demo(app: FastAPI) -> None:
         logger.warning("Demo page missing at %s; /demo is disabled.", page)
         return
 
-    # Registered before the mount so the bare path serves the page instead of a
-    # 404 for a missing index.html.
+    @app.get("/", include_in_schema=False)
     @app.get("/demo", include_in_schema=False)
     def demo_page() -> FileResponse:
         return FileResponse(page, media_type="text/html")

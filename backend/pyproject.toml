@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "creatorai-backend"
 version = "0.1.0"
-description = "CreatorAI intent-driven creator operating system — API and workers"
+description = "GenZCreators intent-driven creator operating system — API and workers"
 requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.115,<1.0",

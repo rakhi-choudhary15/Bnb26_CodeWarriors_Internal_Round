@@ -93,7 +93,8 @@ def migrate_to_head() -> str:
     # Take the URL from the engine rather than from settings: the engine is what
     # every session will actually use, so this can never migrate a different
     # database than the app talks to (tests swap the engine for a temporary file).
-    config.set_main_option("sqlalchemy.url", engine.url.render_as_string(hide_password=False))
+    raw_url = engine.url.render_as_string(hide_password=False).replace("%", "%%")
+    config.set_main_option("sqlalchemy.url", raw_url)
 
     with engine.connect() as connection:
         context = MigrationContext.configure(connection)

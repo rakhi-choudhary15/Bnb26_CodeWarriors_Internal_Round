@@ -1,8 +1,8 @@
-# CreatorAI
+# GenZCreators
 > Tell us what you want to create. We'll build the workflow.
 
 ## What & Why
-CreatorAI is an **intent-driven creator operating system**. Instead of learning dozens of tools, you type what you want to create ("a 30-second energetic dance Reel"). CreatorAI interprets the intent, builds a Creation Blueprint, composes a workflow from reusable AI skills, and guides you from idea → script → shot plan → footage understanding → clips → editing → platform adaptation → publishing → creator intelligence.
+**GenZCreators** is an **intent-driven creator operating system**. Instead of learning dozens of tools, you type what you want to create ("a 30-second energetic dance Reel"). GenZCreators interprets the intent, builds a Creation Blueprint, composes a workflow from reusable AI skills, and guides you from idea → script → shot plan → footage understanding → clips → editing → platform adaptation → publishing → creator intelligence.
 
 Differentiators: Intent→Workflow→Skills, AI Creative Director, Content Genome, Impact Propagation, Content Archaeology, Creator DNA, Reference DNA, editable AI output. See `docs/COMPETITOR-ANALYSIS.md`.
 
@@ -10,23 +10,22 @@ Differentiators: Intent→Workflow→Skills, AI Creative Director, Content Genom
 USER → Intent Engine → Creation Blueprint → Workflow Engine → Skill Router → Model Gateway → Validation → DB → UI.
 
 ## Architecture Overview
-Modular monolith: Next.js frontend, FastAPI backend, RQ workers (FFmpeg/OpenCV/STT), Supabase (Postgres+pgvector, Storage, Auth), Redis. Details: `docs/ARCHITECTURE.md`, `docs/AI-ARCHITECTURE.md`.
+Modular monolith: React/Vite frontend (`/apps/web`), FastAPI backend (`/backend`), in-process/RQ workers (FFmpeg/OpenCV/STT), SQLite/Supabase, Redis.
 
-## Tech Stack
-Next.js, React, TypeScript, Tailwind, shadcn/ui, Framer Motion · Python, FastAPI, Pydantic, SQLAlchemy · Supabase · Redis + RQ · FFmpeg, OpenCV · Whisper-compatible STT · multimodal LLM + embeddings behind a gateway. See `docs/TECH-STACK.md`.
+## Quick Demo Launch (Round 2 Judges)
+1. **Backend & Master Suite (All-in-One):**
+   ```bash
+   cd backend
+   python -m uvicorn app.main:app --port 8000
+   ```
+   Open **http://127.0.0.1:8000/** to launch the complete 14-stage Neo-Brutalist interactive suite.
 
-## Local Setup (target; scaffolding is created in Phase 0 of `docs/IMPLEMENTATION-PLAN.md`)
-```bash
-git clone <repo> && cd creatorai
-cp .env.example .env            # fill values
-# Backend
-cd backend && python -m venv .venv && source .venv/bin/activate && pip install -e ".[dev]"
-alembic upgrade head
-uvicorn app.main:app --reload --port 8000
-rq worker --url $REDIS_URL default     # separate terminal (needs ffmpeg installed)
-# Frontend
-cd ../apps/web && pnpm install && pnpm dev
-```
+2. **Frontend Dev Server (Optional):**
+   ```bash
+   cd apps/web
+   npm run dev
+   ```
+   Open **http://localhost:3000/** (proxies `/api` to the backend).
 Requires: Node 20+, Python 3.11+, FFmpeg, Redis, a Supabase project.
 
 ## Environment Variables

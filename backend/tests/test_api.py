@@ -29,7 +29,8 @@ def _stamp_head(engine: Engine) -> None:
     """Record the migration revision on a database built with `create_all`."""
     config = Config(str(BACKEND_ROOT / "alembic.ini"))
     config.set_main_option("script_location", str(BACKEND_ROOT / "migrations"))
-    config.set_main_option("sqlalchemy.url", engine.url.render_as_string(hide_password=False))
+    raw_url = engine.url.render_as_string(hide_password=False).replace("%", "%%")
+    config.set_main_option("sqlalchemy.url", raw_url)
     command.stamp(config, "head")
 
 
