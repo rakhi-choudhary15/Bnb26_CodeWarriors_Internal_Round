@@ -49,6 +49,11 @@ class CreationIntent(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
+    #: The creator's own words. Structured fields describe the brief; this is the
+    #: brief. Downstream skills write copy, so without it they can only produce
+    #: generic filler about "your idea" instead of the actual subject.
+    primary_text: str = Field(default="", max_length=500)
+    details_text: str | None = Field(default=None, max_length=1000)
     content_type: ContentType = "generic"
     custom_label: str | None = None
     format: str = "video"

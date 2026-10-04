@@ -274,7 +274,12 @@ class ModelGateway:
     ) -> GenerateResult:
         models = self._models_for(capability)
         cache_key = None
-        if namespace and use_cache:
+        # The deterministic dev provider is free to recompute, and a
+        # prompt-keyed cache would hide changes to its logic: the prompt is
+        # identical across runs, so a stale response outlives the code that
+        # produced it. Real providers stay cached.
+        cacheable = self.provider_name != "dev"
+        if namespace and use_cache and cacheable:
             cache_key = ResponseCache.key(
                 namespace,
                 {

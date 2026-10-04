@@ -7,6 +7,7 @@ mode (AGENTS.md §14: API tests for auth/ownership).
 
 from __future__ import annotations
 
+import json
 import uuid
 from collections.abc import Iterator
 from pathlib import Path
@@ -343,6 +344,49 @@ def test_a_step_receives_the_validated_output_of_the_step_before_it(
     assert "error" not in chained, chained
 
 
+def test_copy_stages_receive_the_creators_own_words(client: TestClient) -> None:
+    owner = uuid.uuid4()
+    workflow, steps = _ready_workflow(client, owner, subject="energetic dancing video")
+    client.post(
+        f"/api/workflows/{workflow['id']}/steps/{steps[0]['id']}/run", headers=_headers(owner)
+    )
+    step = client.get(f"/api/workflows/{workflow['id']}", headers=_headers(owner)).json()[
+        "workflow"
+    ]["steps"][0]
+    concepts = step["output_ref"]["concepts"]
+    assert concepts, "the concept stage must produce options"
+    # Generic filler about "your idea" is the failure mode this guards against:
+    # without the brief reaching the skills, copy cannot mention the subject.
+    assert "your idea" not in json.dumps(concepts).lower()
+    assert any("danc" in json.dumps(c).lower() for c in concepts)
+
+
+def test_hooks_survive_the_spoken_budget_whole(client: TestClient) -> None:
+    owner = uuid.uuid4()
+    workflow, steps = _ready_workflow(
+        client, owner, subject="a 30-second energetic dancing video for Instagram"
+    )
+    client.post(
+        f"/api/workflows/{workflow['id']}/steps/{steps[0]['id']}/run", headers=_headers(owner)
+    )
+    client.patch(
+        f"/api/workflows/{workflow['id']}/steps/{steps[0]['id']}",
+        headers=_headers(owner),
+        json={"status": "done"},
+    )
+    client.post(
+        f"/api/workflows/{workflow['id']}/steps/{steps[1]['id']}/run", headers=_headers(owner)
+    )
+    hooks = client.get(f"/api/workflows/{workflow['id']}", headers=_headers(owner)).json()[
+        "workflow"
+    ]["steps"][1]["output_ref"]["hooks"]
+    assert hooks, "the hook stage must produce options"
+    assert not any(h["text"].endswith("…") for h in hooks), (
+        "a hook cut mid-phrase by the spoken budget is unusable copy"
+    )
+    assert "hook_truncated_to_spoken_budget" not in json.dumps(hooks)
+
+
 def test_a_step_keeps_its_provenance_next_to_its_output(client: TestClient) -> None:
     owner = uuid.uuid4()
     workflow, steps = _ready_workflow(client, owner)
@@ -510,11 +554,13 @@ def test_job_poll_shape(client: TestClient) -> None:
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-def _create_intent(client: TestClient, owner: uuid.UUID) -> str:
+def _create_intent(
+    client: TestClient, owner: uuid.UUID, subject: str = "a 30 second reel explaining how to cold email a founder"
+) -> str:
     response = client.post(
         "/api/creation/intents",
         headers=_headers(owner),
-        json={"primary_text": "A 30 second reel explaining how to cold email a founder"},
+        json={"primary_text": f"I want to create {subject}"},
     )
     assert response.status_code == 201, response.text
     return response.json()["intent"]["id"]
@@ -526,8 +572,10 @@ def _project_id_for(client: TestClient, owner: uuid.UUID, intent_id: str) -> str
     ).json()["intent"]["project_id"]
 
 
-def _ready_workflow(client: TestClient, owner: uuid.UUID) -> tuple[dict, list[dict]]:
-    intent_id = _create_intent(client, owner)
+def _ready_workflow(
+    client: TestClient, owner: uuid.UUID, subject: str = "a 30 second reel explaining how to cold email a founder"
+) -> tuple[dict, list[dict]]:
+    intent_id = _create_intent(client, owner, subject=subject)
     blueprint = client.post(
         "/api/creation/blueprints", headers=_headers(owner), json={"intent_id": intent_id}
     ).json()["blueprint"]

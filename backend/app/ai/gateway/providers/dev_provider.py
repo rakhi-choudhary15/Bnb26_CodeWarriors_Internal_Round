@@ -104,7 +104,11 @@ def _sentences(text: str) -> list[str]:
 
 def _clip(text: str, limit: int) -> str:
     text = text.strip()
-    return text if len(text) <= limit else text[: limit - 1].rstrip() + "…"
+    if len(text) <= limit:
+        return text
+    # Cut on a word boundary: half a word reads as a bug, not as brevity.
+    head = text[:limit].rsplit(" ", 1)[0].rstrip(" ,.;:-")
+    return f"{head}…" if head else text[: limit - 1].rstrip() + "…"
 
 
 def _seed(text: str) -> int:
@@ -517,26 +521,27 @@ def _assumptions(blob: str, platform: str, duration: int) -> list[str]:
 def _task_concept_generate(prompt: str) -> dict[str, Any]:
     intent = _payload_of(prompt, "intent") or {}
     subject = _subject(intent)
+    topic = _topic(intent)
     tone = (intent.get("tone") or ["energetic"])[0]
     audience = intent.get("audience") or "this audience"
     return {
         "concepts": [
             {
-                "title": f"{_clip(subject.title(), 42)} — {tone} opener",
+                "title": f"{topic.title()} — {tone} opener",
                 "premise": f"Open on the strongest visual beat, then reveal {subject}.",
                 "why": f"Hits {tone} energy in the first second and holds {audience}.",
                 "angle": "visual_first",
                 "score": 0.71,
             },
             {
-                "title": f"Countdown to {subject}",
+                "title": f"Countdown to {topic}",
                 "premise": "Three escalating moments that land the payoff on the last beat.",
                 "why": "Builds anticipation and gives the editor clean beat markers.",
                 "angle": "escalation",
                 "score": 0.64,
             },
             {
-                "title": f"{_clip(subject.title(), 50)}, explained in one line",
+                "title": f"{_clip(topic.title(), 50)}, explained in one line",
                 "premise": "A single-sentence promise followed by immediate proof.",
                 "why": f"Direct and re-watchable; {audience} can follow it muted.",
                 "angle": "direct",
@@ -549,23 +554,62 @@ def _task_concept_generate(prompt: str) -> dict[str, Any]:
     }
 
 
+#: "I want to create a ..." / "make me a ..." is request scaffolding, not subject.
+#: The article is kept: hook sentences need it ("the fastest way to *a* reel").
+_SUBJECT_PREFIX = re.compile(
+    r"^(i\s+(want|need|would like)\s+to\s+(create|make|build|get)|create|make|build|generate)\s+",
+    flags=re.I,
+)
+#: The destination platform belongs to the intent's structured fields, not in titles.
+_SUBJECT_SUFFIX = re.compile(
+    r"\s+(for|on|for\s+)\s*(instagram(\s+reels?)?|tiktok|youtube(\s+shorts?)?|linkedin"
+    r"|twitter|x|facebook|reels?|shorts?).*$",
+    flags=re.I,
+)
+
+
 def _subject(intent: dict[str, Any]) -> str:
-    text = str(intent.get("primary_text") or "").strip()
+    """The thing the creator asked for, as a phrase sentences can embed."""
+    # Case is preserved: "Gen-Z" and brand casing survive into titles.
+    text = re.sub(r"\s+", " ", str(intent.get("primary_text") or "")).strip()
     if not text:
         return "your idea"
-    text = re.sub(r"^(i want to (create|make)|create|make)\s+", "", text, flags=re.I)
-    return _clip(text, 80)
+    text = _SUBJECT_SUFFIX.sub("", _SUBJECT_PREFIX.sub("", text)).strip(" .,")
+    return _clip(text, 70) or "your idea"
+
+
+def _topic(intent: dict[str, Any]) -> str:
+    """The subject without a leading article, for titles and labels."""
+    text = re.sub(r"^(a|an|the)\s+", "", _subject(intent), flags=re.I)
+    return text or "your idea"
+
+
+def _keywords(intent: dict[str, Any], limit: int = 4) -> str:
+    """The subject's content words, for slots that have a hard length budget."""
+    stop = {
+        "a", "an", "the", "for", "of", "to", "and", "with", "that", "this", "my",
+        "video", "reel", "clip", "content", "post", "video.", "reel.", "my.",
+    }
+    words = [w for w in re.findall(r"[\w'-]+", _topic(intent)) if w.lower() not in stop]
+    # A duration is already carried by the intent's own fields; "30-second" in a
+    # hook reads like a spec, not a tease.
+    kept = [w for w in words if not re.fullmatch(r"\d+[- ]?(second|sec|minute|min)s?", w, re.I)]
+    return " ".join((kept or words)[:limit]) or _clip(_topic(intent), 24)
 
 
 HOOK_STYLES = ("bold_claim", "question", "story", "challenge", "curiosity")
 
 
+#: Hooks are cut to the spoken budget by the validator, and a hook cut
+#: mid-phrase is not usable copy. Templates are written to fit instead.
+_HOOK_WORD_BUDGET = 8
+
+
 def _task_hook_generate(prompt: str) -> dict[str, Any]:
     intent = _payload_of(prompt, "intent") or {}
+    keywords = _keywords(intent)
     subject = _subject(intent)
     duration = int(intent.get("duration_s") or 30)
-    # A hook must fit the platform's opening window.
-    max_words = 12 if duration <= 60 else 20
     candidates = [
         ("bold_claim", f"This is the fastest way to {subject}."),
         ("question", f"Why does everyone struggle with {subject}?"),
@@ -573,21 +617,34 @@ def _task_hook_generate(prompt: str) -> dict[str, Any]:
         ("challenge", f"Beat this in {max(10, duration)} seconds or scroll past."),
         ("curiosity", f"Everyone gets {subject} wrong. Watch the ending."),
         ("bold_claim", f"Stop overthinking {subject}. Do this instead."),
+        # Short forms: used when the subject is too long to fit above.
+        ("curiosity", f"Wait for the {keywords} reveal."),
+        ("question", f"Think you know {keywords}? Watch this."),
+        ("bold_claim", f"{keywords} in {max(10, duration)} seconds."),
+        ("challenge", f"Your {keywords} attempt vs. this one."),
+        ("story", f"Nobody warns you about {keywords}."),
+        ("question", f"Still struggling with {keywords}?"),
     ]
-    chosen = candidates[: max(3, min(5, duration // 10))]
+    fitting = [c for c in candidates if len(c[1].split()) <= _HOOK_WORD_BUDGET]
+    chosen = fitting[: max(3, min(5, duration // 10))]
     hooks = []
     for style, text in chosen:
         words = text.split()
         score = round(max(0.35, 0.9 - 0.03 * len(words) + (0.05 if style == "bold_claim" else 0)), 2)
         hooks.append(
             {
-                "text": " ".join(words[:max_words]),
+                "text": " ".join(words),
                 "style": style,
                 "score": score,
                 "reason": f"{style.replace('_', ' ').title()} openings retain viewers in the first 3s.",
             }
         )
-    return {"hooks": hooks, "selected_index": 0, "confidence": 0.6, "warnings": []}
+    return {
+        "hooks": hooks,
+        "selected_index": 0,
+        "confidence": 0.6 if len(fitting) >= 3 else 0.4,
+        "warnings": [] if len(fitting) >= 3 else ["no_hooks_fit_spoken_budget"],
+    }
 
 
 def _task_script_generate(prompt: str) -> dict[str, Any]:

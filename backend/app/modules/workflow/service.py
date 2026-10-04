@@ -280,7 +280,13 @@ def run_step_inline(
         step_id=step.id,
         skill_id=skill_ids[0],
         gateway=get_gateway(),
-        context=gateway_context,
+        # Every stage sees the project's brief, not just the stage whose input
+        # schema happens to declare those fields: copy written at step 3 is
+        # still about the thing the creator asked for at step 0.
+        context={
+            **gateway_context,
+            "intent": _project_brief(db, owner_id=owner_id, workflow=workflow),
+        },
     )
     output: dict[str, Any] = {}
     for skill_id in skill_ids:
@@ -384,7 +390,12 @@ def _project_brief(db: Session, *, owner_id: uuid.UUID, workflow: Workflow) -> d
     if project.intent_id:
         from app.modules.intent.repository import get as get_intent
 
-        brief.update(get_intent(db, owner_id=owner_id, intent_id=project.intent_id).parsed or {})
+        intent = get_intent(db, owner_id=owner_id, intent_id=project.intent_id)
+        brief.update(intent.parsed or {})
+        # Set after the parsed merge so a structured key can never shadow the
+        # creator's actual words; copy stages need the subject itself.
+        brief["primary_text"] = intent.primary_text
+        brief["details_text"] = intent.details_text
     return brief
 
 

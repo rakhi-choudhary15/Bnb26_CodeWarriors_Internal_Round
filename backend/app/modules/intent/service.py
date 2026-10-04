@@ -162,7 +162,7 @@ def _post_process(output: dict[str, Any], warnings: list[str]) -> dict[str, Any]
         f"A {spec.label} {intent.format} of about {intent.duration_s}s, captioned, "
         f"opening on a {spec.hook_window_s:g}s hook."
     )
-    parsed = intent.model_dump()
+    parsed = intent.model_dump(exclude={"primary_text", "details_text"})
     # Which stage template was actually applied. The UI shows it so a creator can
     # see why the stage list looks the way it does.
     parsed["template_key"] = template_key(intent.content_type)

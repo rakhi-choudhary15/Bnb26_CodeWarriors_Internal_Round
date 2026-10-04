@@ -105,7 +105,11 @@ class IntentAnalyzeSkill(SkillModule):
             )
 
         intent = parsed.to_intent().apply_platform_limits()
-        output = IntentAnalyzeOutput.model_validate(intent.model_dump())
+        # `primary_text`/`details_text` are what the creator typed, not something
+        # the model understood, so they are excluded from the understanding output.
+        output = IntentAnalyzeOutput.model_validate(
+            intent.model_dump(exclude={"primary_text", "details_text"})
+        )
         return SkillResult.ok(
             output,
             confidence=intent.confidence.overall,
