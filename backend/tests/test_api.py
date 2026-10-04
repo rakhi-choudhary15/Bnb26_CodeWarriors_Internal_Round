@@ -308,6 +308,53 @@ def test_workflow_step_run_and_advance(client: TestClient) -> None:
     assert statuses[1] == "ready", "accepting a step unlocks exactly the next one"
 
 
+def test_a_step_receives_the_validated_output_of_the_step_before_it(
+    client: TestClient,
+) -> None:
+    """The demo path: `hook.generate` declares `input_schema=ConceptOutput`.
+
+    It needs the `concepts` that `concept.generate` produced, so a workflow only
+    works if a finished step persists its output where the next one reads it.
+    Without that, step two fails validation the moment a creator runs it.
+    """
+    owner = uuid.uuid4()
+    workflow, steps = _ready_workflow(client, owner)
+
+    first_run = client.post(
+        f"/api/workflows/{workflow['id']}/steps/{steps[0]['id']}/run", headers=_headers(owner)
+    )
+    assert first_run.status_code == 200, first_run.text
+    produced = first_run.json()["result"]
+    assert produced, "the first step must return output for the next one to consume"
+
+    client.patch(
+        f"/api/workflows/{workflow['id']}/steps/{steps[0]['id']}",
+        headers=_headers(owner),
+        json={"status": "done"},
+    )
+
+    second_run = client.post(
+        f"/api/workflows/{workflow['id']}/steps/{steps[1]['id']}/run", headers=_headers(owner)
+    )
+    assert second_run.status_code == 200, second_run.text
+    chained = second_run.json()["result"]
+    assert chained, "the dependent step must run, not fail on a missing input"
+    # Whatever step two produced, it must not be a validation error.
+    assert "error" not in chained, chained
+
+
+def test_a_step_keeps_its_provenance_next_to_its_output(client: TestClient) -> None:
+    owner = uuid.uuid4()
+    workflow, steps = _ready_workflow(client, owner)
+    client.post(
+        f"/api/workflows/{workflow['id']}/steps/{steps[0]['id']}/run", headers=_headers(owner)
+    )
+    step = client.get(f"/api/workflows/{workflow['id']}", headers=_headers(owner)).json()[
+        "workflow"
+    ]["steps"][0]
+    assert step["output_ref"]["skill_id"], "the step records which skill produced the output"
+
+
 def test_locked_step_cannot_run(client: TestClient) -> None:
     owner = uuid.uuid4()
     workflow, steps = _ready_workflow(client, owner)
