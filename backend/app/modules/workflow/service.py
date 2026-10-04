@@ -305,7 +305,16 @@ def run_step_inline(
         }
 
     step.status = StepStatus.needs_review
-    step.output_ref = {"skill_id": output.get("skill_id"), "warnings": output.get("warnings", [])}
+    # The validated output is persisted alongside the provenance fields, because
+    # the next stage reads it from here: `_step_input` hands a predecessor's
+    # `output_ref` to any field the target skill declares. Storing only the skill
+    # id left every dependent stage with an empty payload, so `hook.generate`
+    # could not find the `concepts` it requires from `concept.generate`.
+    step.output_ref = {
+        **(output.get("output") or {}),
+        "skill_id": output.get("skill_id"),
+        "warnings": output.get("warnings", []),
+    }
     step.error = None
     db.add(step)
     _unlock_next(db, workflow)
