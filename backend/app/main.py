@@ -10,9 +10,12 @@ from __future__ import annotations
 import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from app.api import errors
 from app.api.routes import assets, creation, health, jobs, projects
@@ -85,7 +88,29 @@ def create_app() -> FastAPI:
     app.include_router(projects.router)
     app.include_router(assets.router)
     app.include_router(jobs.router)
+    _mount_demo(app)
     return app
+
+
+def _mount_demo(app: FastAPI) -> None:
+    """Serve the hackathon demo page from the API origin.
+
+    Temporary: the product UI is the Next.js app, not this page. It exists so a
+    demo can be run from one process on one port, and it is deliberately isolated
+    in `static/` so it can be deleted with the rest of the hackathon scaffolding.
+    """
+    page = Path(__file__).parent / "static" / "demo.html"
+    if not page.exists():  # pragma: no cover - the file ships with the repo
+        logger.warning("Demo page missing at %s; /demo is disabled.", page)
+        return
+
+    # Registered before the mount so the bare path serves the page instead of a
+    # 404 for a missing index.html.
+    @app.get("/demo", include_in_schema=False)
+    def demo_page() -> FileResponse:
+        return FileResponse(page, media_type="text/html")
+
+    app.mount("/demo", StaticFiles(directory=str(page.parent), html=True), name="demo")
 
 
 def _startup_checks() -> None:

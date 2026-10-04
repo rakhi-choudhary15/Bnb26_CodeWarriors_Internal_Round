@@ -1,0 +1,557 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>CreatorAI — Intent to Blueprint</title>
+<style>
+  :root {
+    --ink: #111111;
+    --paper: #F5F1E8;
+    --lime: #C7FF4A;
+    --coral: #FF6B5F;
+    --purple: #6C63FF;
+    --cyan: #59E3FF;
+    --border: 3px solid var(--ink);
+    --shadow: 6px 6px 0 var(--ink);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font: 16px/1.5 ui-monospace, "Cascadia Code", Menlo, Consolas, monospace;
+  }
+  header {
+    border-bottom: var(--border);
+    padding: 18px 24px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    align-items: baseline;
+  }
+  h1 { font-size: 22px; margin: 0; letter-spacing: -0.5px; }
+  .sub { font-size: 13px; opacity: 0.7; }
+  main { padding: 24px; max-width: 1080px; margin: 0 auto; }
+  section { margin-bottom: 28px; }
+  h2 { font-size: 15px; text-transform: uppercase; letter-spacing: 1px; margin: 0 0 10px; }
+  .card {
+    background: #fff;
+    border: var(--border);
+    box-shadow: var(--shadow);
+    padding: 16px;
+    margin-bottom: 14px;
+  }
+  textarea, input {
+    width: 100%;
+    font: inherit;
+    padding: 10px;
+    border: var(--border);
+    background: var(--paper);
+    color: var(--ink);
+  }
+  textarea { min-height: 74px; resize: vertical; }
+  button {
+    font: inherit;
+    font-weight: 700;
+    padding: 9px 16px;
+    border: var(--border);
+    background: var(--lime);
+    color: var(--ink);
+    box-shadow: 4px 4px 0 var(--ink);
+    cursor: pointer;
+  }
+  button:hover:not(:disabled) { transform: translate(-1px, -1px); }
+  button:disabled { opacity: 0.45; cursor: not-allowed; }
+  button.ghost { background: #fff; }
+  button.ai { background: var(--purple); color: #fff; }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  .badge {
+    display: inline-block;
+    border: 2px solid var(--ink);
+    padding: 1px 7px;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    background: var(--lime);
+  }
+  .badge.ai { background: var(--purple); color: #fff; }
+  .badge.media { background: var(--cyan); }
+  .badge.warn { background: var(--coral); }
+  .kv { display: grid; grid-template-columns: 150px 1fr; gap: 4px 12px; font-size: 14px; }
+  .kv dt { opacity: 0.65; }
+  .kv dd { margin: 0; font-weight: 700; }
+  .tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .tag { border: 2px solid var(--ink); padding: 2px 8px; font-size: 12px; background: var(--paper); }
+  ol.steps { list-style: none; margin: 0; padding: 0; counter-reset: s; }
+  .step { border: var(--border); background: #fff; padding: 12px; margin-bottom: 10px; }
+  .step.locked { opacity: 0.5; }
+  .step.running { box-shadow: inset 6px 0 0 var(--purple); }
+  .step.done { box-shadow: inset 6px 0 0 var(--lime); }
+  .step.skipped { box-shadow: inset 6px 0 0 var(--cyan); opacity: 0.75; }
+  .step.needs_review { box-shadow: inset 6px 0 0 var(--coral); }
+  .step-head { display: flex; justify-content: space-between; gap: 10px; align-items: center; }
+  .step-title { font-weight: 700; }
+  .out { margin-top: 10px; font-size: 14px; }
+  .out h3 { font-size: 12px; text-transform: uppercase; margin: 10px 0 4px; opacity: 0.6; }
+  .choice { border-left: 4px solid var(--purple); padding: 6px 10px; margin-bottom: 6px; background: var(--paper); }
+  .choice.picked { border-left-color: var(--lime); }
+  .line { border-left: 4px solid var(--cyan); padding: 6px 10px; margin-bottom: 5px; background: var(--paper); }
+  .line b { text-transform: uppercase; font-size: 11px; opacity: 0.6; margin-right: 6px; }
+  .shot { border: 1px dashed var(--ink); padding: 6px 10px; margin-bottom: 5px; background: var(--paper); font-size: 13px; }
+  .muted { opacity: 0.65; font-size: 13px; }
+  .err { border: var(--border); border-left: 8px solid var(--coral); background: #fff; padding: 12px; margin-top: 10px; }
+  .toast {
+    position: fixed; right: 18px; bottom: 18px; background: var(--ink); color: var(--paper);
+    padding: 10px 14px; border: 2px solid var(--ink); font-size: 13px; opacity: 0; transition: opacity .2s;
+  }
+  .toast.show { opacity: 1; }
+  .hidden { display: none !important; }
+  code { background: var(--paper); border: 1px solid var(--ink); padding: 0 4px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>CreatorAI</h1>
+  <span class="sub">Intent &rarr; Blueprint &rarr; Workflow &rarr; validated skill output</span>
+  <span class="badge ai">AI</span>
+  <span class="badge">REAL skills</span>
+  <span class="badge media" id="healthBadge">checking&hellip;</span>
+</header>
+
+<main>
+  <section id="s-intent">
+    <h2>1 &middot; Intent</h2>
+    <div class="card">
+      <label for="primary" class="muted">What do you want to make?</label>
+      <textarea id="primary">I want to create a 30-second energetic dancing video for Instagram</textarea>
+      <div class="row" style="margin-top:10px">
+        <input id="details" placeholder="Details (optional): Bollywood-inspired, Gen-Z audience, high energy"
+               style="flex:1; min-width:260px" />
+        <button id="analyzeBtn">Analyze intent</button>
+      </div>
+      <div id="intentErr" class="err hidden"></div>
+    </div>
+    <div class="card hidden" id="intentCard">
+      <div class="row" style="justify-content:space-between">
+        <strong>Parsed intent</strong>
+        <span><span class="badge" id="intentStatus">ready</span> <span class="badge ai" id="intentConfidence">conf 0</span></span>
+      </div>
+      <dl class="kv" id="intentKv" style="margin-top:12px"></dl>
+      <div class="tags" id="intentTags"></div>
+      <div id="intentAssumptions" class="muted" style="margin-top:10px"></div>
+      <div class="row" style="margin-top:14px">
+        <button id="blueprintBtn" class="ai">Generate blueprint</button>
+        <span class="muted">Blueprint is a stage list, not content.</span>
+      </div>
+    </div>
+  </section>
+
+  <section id="s-blueprint" class="hidden">
+    <h2>2 &middot; Creation Blueprint</h2>
+    <div class="card">
+      <div class="row" style="justify-content:space-between">
+        <strong id="bpTitle">Blueprint</strong>
+        <span><span class="badge" id="bpTemplate">template</span> <span class="badge" id="bpCount">0 stages</span></span>
+      </div>
+      <ol class="steps" id="bpStages" style="margin-top:12px"></ol>
+      <div class="row" style="margin-top:14px">
+        <button id="runBtn" class="ai">Start workflow</button>
+        <span class="muted">Runs the fast stages now; media stages become jobs.</span>
+      </div>
+    </div>
+  </section>
+
+  <section id="s-workflow" class="hidden">
+    <h2>3 &middot; Workflow</h2>
+    <div id="steps"></div>
+  </section>
+
+  <section id="s-truth" class="hidden">
+    <h2>What is real here</h2>
+    <div class="card">
+      <dl class="kv">
+        <dt>Intent parse</dt><dd>REAL &mdash; <code>intent.analyze</code> via the model gateway</dd>
+        <dt>Blueprint</dt><dd>REAL &mdash; stage list derived from the parsed intent</dd>
+        <dt>Concepts / hooks / script / shots</dt><dd>REAL &mdash; validated skill schemas, stored per step</dd>
+        <dt>Ownership</dt><dd>REAL &mdash; every read is scoped; another owner gets 404</dd>
+        <dt>Video understanding &amp; render</dt><dd>Not in this demo &mdash; needs FFmpeg and uploaded media</dd>
+      </dl>
+      <p class="muted">Every stage output on this page came back from the API through Pydantic validation and rule checks. Nothing here is hard-coded sample data.</p>
+    </div>
+  </section>
+</main>
+<div class="toast" id="toast"></div>
+
+<script>
+(function () {
+  "use strict";
+
+  // One identity for the whole session, kept in localStorage so a reload does not
+  // lose the project. This is the dev auth mode, not a login.
+  var OWNER_KEY = "creatorai.dev.owner";
+  function owner() {
+    var id = localStorage.getItem(OWNER_KEY);
+    if (!id) {
+      id = (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + "-" + Math.random());
+      localStorage.setItem(OWNER_KEY, id);
+    }
+    return id;
+  }
+
+  var state = { projectId: null, intentId: null, blueprintId: null, workflowId: null, steps: [], poll: null };
+
+  function $(id) { return document.getElementById(id); }
+  function toast(msg) {
+    var el = $("toast");
+    el.textContent = msg;
+    el.classList.add("show");
+    setTimeout(function () { el.classList.remove("show"); }, 2200);
+  }
+  function esc(value) {
+    return String(value == null ? "" : value).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+  function el(tag, cls, html) {
+    var node = document.createElement(tag);
+    if (cls) node.className = cls;
+    if (html != null) node.innerHTML = html;
+    return node;
+  }
+
+  function showError(where, err) {
+    var box = $(where);
+    var detail = "";
+    if (err && err.details) {
+      try { detail = "<br><code>" + esc(JSON.stringify(err.details)) + "</code>"; } catch (e) { /* ignore */ }
+    }
+    box.innerHTML = "<strong>" + esc((err && err.code) || "ERROR") + "</strong> &mdash; " +
+      esc((err && err.message) || String(err)) + detail;
+    box.classList.remove("hidden");
+  }
+
+  // Every call goes through here so auth, the error envelope and the request id
+  // are handled in one place.
+  function api(method, path, body, headers) {
+    var init = {
+      method: method,
+      headers: Object.assign({
+        "Authorization": "Bearer dev:" + owner(),
+        "Content-Type": "application/json"
+      }, headers || {})
+    };
+    if (body !== undefined) init.body = JSON.stringify(body);
+    return fetch(path, init).then(function (response) {
+      return response.text().then(function (raw) {
+        var data = {};
+        if (raw) { try { data = JSON.parse(raw); } catch (e) { data = { message: raw }; } }
+        if (!response.ok) {
+          var err = (data && data.error) || { code: "HTTP_" + response.status, message: response.statusText };
+          err.status = response.status;
+          throw err;
+        }
+        return { status: response.status, data: data };
+      });
+    });
+  }
+
+  function idle(node) { node.disabled = true; node.textContent = node.dataset.idle || node.textContent; }
+  function busy(node, label) {
+    node.dataset.idle = node.dataset.idle || node.textContent;
+    node.disabled = true;
+    node.textContent = label;
+  }
+  function restore(node) { node.disabled = false; node.textContent = node.dataset.idle || node.textContent; }
+
+  function health() {
+    api("GET", "/api/health").then(function (res) {
+      var h = res.data;
+      var badge = $("healthBadge");
+      var skills = (h.skills && (h.skills.real || h.skills.registered)) || 0;
+      badge.textContent = h.status + " · " + skills + " skills";
+      badge.className = "badge media";
+      if (h.ffmpeg && h.ffmpeg.available === false) {
+        badge.textContent += " · no ffmpeg";
+      }
+    }).catch(function () {
+      $("healthBadge").textContent = "API unreachable";
+      $("healthBadge").className = "badge warn";
+    });
+  }
+
+  function renderIntent(intent) {
+    var p = intent.parsed || {};
+    $("intentCard").classList.remove("hidden");
+    $("intentStatus").textContent = intent.parse_status + (intent.fallback ? " · fallback" : "");
+    var conf = (intent.confidence && intent.confidence.overall) || 0;
+    $("intentConfidence").textContent = "conf " + conf;
+
+    var rows = [
+      ["Platform", (p.platform || "—").replace(/_/g, " ")],
+      ["Format", p.format || "—"],
+      ["Duration", (p.duration_s || 0) + "s"],
+      ["Content type", (p.content_type || "—").replace(/_/g, " ")],
+      ["Audience", p.audience || "—"]
+    ];
+    $("intentKv").innerHTML = rows.map(function (r) {
+      return "<dt>" + esc(r[0]) + "</dt><dd>" + esc(r[1]) + "</dd>";
+    }).join("");
+
+    var tags = (p.tone || []).concat(p.style || []).concat(p.stages || []);
+    $("intentTags").innerHTML = tags.slice(0, 10).map(function (t) {
+      return '<span class="tag">' + esc(t) + "</span>";
+    }).join("");
+
+    var notes = (p.assumptions || []).concat(intent.warnings || []);
+    $("intentAssumptions").innerHTML = notes.length
+      ? "Assumed / flagged: " + notes.map(esc).join(" · ")
+      : "No assumptions needed.";
+  }
+
+  function analyze() {
+    var btn = $("analyzeBtn");
+    $("intentErr").classList.add("hidden");
+    busy(btn, "Analyzing…");
+    api("POST", "/api/creation/intents", {
+      primary_text: $("primary").value.trim(),
+      details_text: $("details").value.trim() || null
+    }).then(function (res) {
+      state.projectId = res.data.project_id;
+      state.intentId = res.data.intent.id;
+      renderIntent(res.data.intent);
+      toast("Intent analyzed");
+    }).catch(function (err) {
+      showError("intentErr", err);
+    }).then(function () { restore(btn); });
+  }
+
+  function makeBlueprint() {
+    var btn = $("blueprintBtn");
+    $("intentErr").classList.add("hidden");
+    busy(btn, "Building…");
+    api("POST", "/api/creation/blueprints", { intent_id: state.intentId })
+      .then(function (res) {
+        var bp = res.data.blueprint;
+        state.blueprintId = bp.id;
+        $("s-blueprint").classList.remove("hidden");
+        $("bpTitle").textContent = "Blueprint · " + (bp.template_key || "custom");
+        $("bpTemplate").textContent = bp.template_key || "template";
+        $("bpCount").textContent = bp.stages.length + " stages";
+        $("bpStages").innerHTML = bp.stages.map(function (stage, i) {
+          return '<li class="step"><div class="step-head"><span class="step-title">' +
+            (i + 1) + ". " + esc(stage.title) + '</span><span class="badge ai">' +
+            esc((stage.skill_ids || []).join(", ")) + "</span></div>" +
+            '<div class="muted">' + esc(stage.goal || "") +
+            (stage.manual ? " · manual gate" : "") + "</div></li>";
+        }).join("");
+        toast("Blueprint ready · " + bp.stages.length + " stages");
+      })
+      .catch(function (err) { showError("intentErr", err); })
+      .then(function () { restore(btn); });
+  }
+
+  function startWorkflow() {
+    var btn = $("runBtn");
+    if (!state.blueprintId) { toast("Generate the blueprint first"); return; }
+    busy(btn, "Creating…");
+    api("POST", "/api/projects/" + state.projectId + "/workflows", { blueprint_id: state.blueprintId })
+      .then(function (res) {
+        state.workflowId = res.data.workflow.id;
+        $("s-workflow").classList.remove("hidden");
+        $("s-truth").classList.remove("hidden");
+        renderSteps(res.data.workflow.steps);
+        toast("Workflow started");
+      })
+      .catch(function (err) { showError("intentErr", err); })
+      .then(function () { restore(btn); });
+  }
+
+  function statusBadge(step) {
+    if (step.status === "done") return '<span class="badge">done</span>';
+    if (step.status === "skipped") return '<span class="badge media">skipped</span>';
+    if (step.status === "running") return '<span class="badge ai">running</span>';
+    if (step.status === "needs_review") return '<span class="badge warn">needs review</span>';
+    if (step.status === "ready") return '<span class="badge ai">ready</span>';
+    if (step.status === "failed") return '<span class="badge warn">failed</span>';
+    return '<span class="badge">locked</span>';
+  }
+
+  function renderOutput(ref) {
+    if (!ref || !Object.keys(ref).length) return '<div class="muted">No output yet.</div>';
+    var html = "";
+    if (ref.concepts) {
+      html += "<h3>Concepts</h3>" + ref.concepts.map(function (c, i) {
+        return '<div class="choice' + (i === ref.selected_index ? " picked" : "") + '"><b>' +
+          esc(c.title) + "</b><br>" + esc(c.premise) +
+          '<br><span class="muted">' + esc(c.why || "") + " · " + esc(c.angle) +
+          " · score " + esc(c.score) + "</span></div>";
+      }).join("");
+    }
+    if (ref.hooks) {
+      html += "<h3>Hooks</h3>" + ref.hooks.map(function (h, i) {
+        return '<div class="choice' + (i === ref.selected_index ? " picked" : "") + '"><b>' +
+          esc(h.text) + "</b><br><span class=\"muted\">" + esc(h.style) + " · " +
+          esc(h.word_count) + " words · " + esc(h.estimated_seconds) + "s · score " +
+          esc(h.score) + "</span></div>";
+      }).join("");
+    }
+    if (ref.lines) {
+      html += "<h3>Script · " + esc(ref.title || "") + "</h3>" + ref.lines.map(function (l) {
+        return '<div class="line"><b>' + esc(l.beat) + "</b>" + esc(l.text) + "</div>";
+      }).join("");
+      if (ref.cta) html += '<div class="line"><b>cta</b>' + esc(ref.cta) + "</div>";
+      html += '<div class="muted">≈' + esc(ref.estimated_duration_s) + "s of " +
+        esc(ref.target_duration_s) + "s</div>";
+    }
+    if (ref.shots) {
+      html += "<h3>Shot plan · " + ref.shots.length + " shots · " +
+        esc(ref.total_duration_s) + "s</h3>" + ref.shots.map(function (s) {
+          var span = Number(s.end_s || 0) - Number(s.start_s || 0);
+          return '<div class="shot"><b>#' + esc(s.n) + "</b> " + esc(s.framing) +
+            " · " + esc(span.toFixed(1)) + "s" +
+            (s.camera_height ? " · " + esc(s.camera_height) : "") +
+            '<br><span class="muted">' + esc(s.action) + "</span></div>";
+        }).join("");
+      if (ref.checklist && ref.checklist.length) {
+        html += '<h3>Checklist</h3><div class="tags">' + ref.checklist.map(function (c) {
+          return '<span class="tag">' + esc(c) + "</span>";
+        }).join("") + "</div>";
+      }
+    }
+    if (ref.skill_id) {
+      html += '<div class="muted" style="margin-top:8px">produced by <code>' +
+        esc(ref.skill_id) + "</code>" +
+        (ref.warnings && ref.warnings.length ? " · warnings: " + esc(ref.warnings.join(", ")) : "") +
+        "</div>";
+    }
+    if (!html) {
+      html = '<div class="muted">Output stored: <code>' +
+        esc(Object.keys(ref).join(", ")) + "</code></div>";
+    }
+    return html;
+  }
+
+  function renderSteps(steps) {
+    state.steps = steps;
+    var host = $("steps");
+    host.innerHTML = "";
+    steps.forEach(function (step) {
+      var node = el("div", "step " + step.status);
+      node.dataset.status = step.status;
+      node.dataset.stepId = step.id;
+      var hasOutput = step.output_ref && Object.keys(step.output_ref).length;
+      var actions = "";
+      var runnable = step.skill_ids && step.skill_ids.length && !step.manual;
+      if (step.status === "ready" && runnable) {
+        actions += '<button data-run="' + step.id + '">Run</button>';
+      }
+      if (step.status === "needs_review") {
+        // The stage ran and its output is stored; the creator decides.
+        actions += '<button data-accept="' + step.id + '">Accept</button>';
+        if (runnable) actions += ' <button class="ghost" data-run="' + step.id + '">Re-run</button>';
+      }
+      if (step.status === "ready" || step.status === "needs_review" || step.status === "failed") {
+        actions += ' <button class="ghost" data-skip="' + step.id + '">Skip</button>';
+      }
+      if (step.status === "running") {
+        actions += '<span class="muted">working…</span>';
+      }
+      if (step.status === "done" || step.status === "skipped") {
+        actions = '<span class="muted">' + step.status + "</span>";
+      }
+      node.innerHTML =
+        '<div class="step-head"><span class="step-title">' + (step.position + 1) + ". " +
+        esc(step.title) + "</span>" + statusBadge(step) + "</div>" +
+        '<div class="muted">' + esc(step.goal || "") + " · " +
+        esc((step.skill_ids || []).join(", ")) + "</div>" +
+        '<div class="row" style="margin-top:8px">' + actions + "</div>" +
+        '<div class="out" data-out="' + step.id + '">' + renderOutput(step.output_ref) + "</div>";
+      host.appendChild(node);
+    });
+  }
+
+  function refreshSteps() {
+    return api("GET", "/api/workflows/" + state.workflowId).then(function (res) {
+      renderSteps(res.data.workflow.steps);
+      return res.data.workflow.steps;
+    });
+  }
+
+  function pollJob(jobId, stepId, attempts) {
+    attempts = attempts || 0;
+    if (attempts > 90) {
+      toast("Job is taking long — check /api/jobs");
+      return;
+    }
+    api("GET", "/api/jobs/" + jobId).then(function (res) {
+      var job = res.data.job;
+      var node = document.querySelector('[data-out="' + stepId + '"]');
+      if (node && job.status !== "succeeded") {
+        node.innerHTML = '<div class="muted">Job ' + esc(job.status) +
+          (job.stage ? " · " + esc(job.stage) : "") +
+          " · " + Math.round((job.progress || 0) * 100) + "%</div>";
+      }
+      if (job.status === "succeeded") {
+        refreshSteps();
+        toast("Job finished");
+      } else if (job.status === "failed" || job.status === "cancelled") {
+        showErrorState(stepId, (job.error && job.error.message) || job.status);
+      } else {
+        state.poll = setTimeout(function () { pollJob(jobId, stepId, attempts + 1); }, 1200);
+      }
+    }).catch(function (err) {
+      showErrorState(stepId, err.message);
+    });
+  }
+
+  function showErrorState(stepId, message) {
+    var node = document.querySelector('[data-out="' + stepId + '"]');
+    if (node) node.innerHTML = '<div class="err"><strong>STEP ERROR</strong> — ' + esc(message) + "</div>";
+  }
+
+  function runStep(stepId, btn) {
+    busy(btn, "Running…");
+    var node = btn.closest(".step");
+    if (node) node.classList.add("running");
+    api("POST", "/api/workflows/" + state.workflowId + "/steps/" + stepId + "/run", undefined, {
+      "Idempotency-Key": "demo-" + stepId
+    }).then(function (res) {
+      if (res.status === 202) {
+        toast("Queued as a job — polling");
+        pollJob(res.data.job_id, stepId, 0);
+      } else {
+        return refreshSteps().then(function () { toast("Step ran"); });
+      }
+    }).catch(function (err) {
+      showErrorState(stepId, (err.code || "") + " " + (err.message || ""));
+      restore(btn);
+    });
+  }
+
+  function decide(stepId, status, label) {
+    return api("PATCH", "/api/workflows/" + state.workflowId + "/steps/" + stepId, { status: status })
+      .then(function () { return refreshSteps(); })
+      .then(function () { toast(label); })
+      .catch(function (err) { toast(err.message || "Could not update the step"); });
+  }
+
+  document.addEventListener("click", function (event) {
+    var run = event.target.closest("[data-run]");
+    if (run) { runStep(run.dataset.run, run); return; }
+    var accept = event.target.closest("[data-accept]");
+    if (accept) { decide(accept.dataset.accept, "done", "Accepted — next stage unlocked"); return; }
+    var skip = event.target.closest("[data-skip]");
+    if (skip) { decide(skip.dataset.skip, "skipped", "Skipped"); }
+  });
+
+  $("analyzeBtn").addEventListener("click", analyze);
+  $("blueprintBtn").addEventListener("click", makeBlueprint);
+  $("runBtn").addEventListener("click", startWorkflow);
+
+  health();
+  window.demoApi = { state: state, api: api, refreshSteps: refreshSteps };
+})();
+</script>
+</body>
+</html>
