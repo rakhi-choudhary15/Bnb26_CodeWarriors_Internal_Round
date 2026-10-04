@@ -225,7 +225,7 @@ def list_content_opportunities(
             ),
         ]
         created_opps = []
-        for title, desc, kind, effort, meta in sample_defs:
+        for title, desc, kind, effort, _meta in sample_defs:
             opp = ContentOpportunity(
                 owner_id=owner_id,
                 title=title,
@@ -273,8 +273,8 @@ def update_content_opportunity(
 ) -> dict[str, Any]:
     try:
         o_uuid = uuid.UUID(opportunity_id)
-    except ValueError:
-        raise ValidationError(f"Invalid opportunity id {opportunity_id}")
+    except ValueError as exc:
+        raise ValidationError(f"Invalid opportunity id {opportunity_id}") from exc
 
     opp = db.query(ContentOpportunity).filter_by(id=o_uuid, owner_id=owner_id).first()
     if not opp:

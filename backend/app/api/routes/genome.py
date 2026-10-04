@@ -18,13 +18,10 @@ from app.core.models import (
     ContentEdge,
     ContentNode,
     EdgeRelation,
-    ImpactEvent,
-    ImpactItem,
     ImpactLevel,
     NodeState,
     NodeType,
     Project,
-    Resolution,
 )
 
 router = APIRouter(prefix="/api/content-genome", tags=["genome"])
@@ -50,8 +47,8 @@ def get_genome(
     """Retrieve the content genome graph nodes and edges for a project."""
     try:
         p_uuid = uuid.UUID(project_id)
-    except ValueError:
-        raise ValidationError(f"Invalid project id {project_id}")
+    except ValueError as exc:
+        raise ValidationError(f"Invalid project id {project_id}") from exc
 
     project = db.query(Project).filter_by(id=p_uuid, owner_id=owner_id).first()
     if not project:
@@ -210,8 +207,8 @@ def propagate_impact(
     """
     try:
         t_uuid = uuid.UUID(body.trigger_node_id)
-    except ValueError:
-        raise ValidationError(f"Invalid trigger node id {body.trigger_node_id}")
+    except ValueError as exc:
+        raise ValidationError(f"Invalid trigger node id {body.trigger_node_id}") from exc
 
     trigger = db.query(ContentNode).filter_by(id=t_uuid, owner_id=owner_id).first()
     if not trigger:
@@ -248,7 +245,7 @@ def propagate_impact(
             suggested = f"Update line references and re-sync timing to match '{body.after_text[:40]}'."
         else:
             text_count += 1
-            reason = f"Downstream export package derived from updated source."
+            reason = "Downstream export package derived from updated source."
             suggested = f"Regenerate captions and metadata with '{body.after_text[:40]}'."
 
         items.append({

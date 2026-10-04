@@ -112,7 +112,7 @@ class Settings(BaseSettings):
 
     # --- Frontend -------------------------------------------------------
     next_public_api_url: str = "http://localhost:8000"
-    cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
+    cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000,http://localhost:8000,http://127.0.0.1:8000"
 
     # --- Demo mode (D-013) ---------------------------------------------
     demo_mode: bool = False

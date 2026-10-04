@@ -23,7 +23,7 @@ from app.core.media_validation import (
     UnsupportedMediaError,
     sniff_mime,
 )
-from app.core.models import Asset, AssetKind, AssetStatus
+from app.core.models import Asset, AssetKind, AssetStatus, Project
 from app.core.storage import BUCKETS, build_object_key, get_storage
 
 logger = get_logger(__name__)
@@ -45,7 +45,7 @@ def request_upload(
     mime: str,
     size_bytes: int,
     kind: str,
-    project_id: uuid.UUID | None,
+    project_id: uuid.UUID | str | None,
 ) -> dict[str, Any]:
     """Reserve a destination and return a short-lived upload URL."""
     if mime not in ALLOWED_MIMES:
@@ -65,9 +65,26 @@ def request_upload(
             "Unknown asset kind.", details={"kind": kind, "allowed": [m.value for m in AssetKind]}
         )
 
+    proj_uuid: uuid.UUID | None = None
+    if project_id is not None:
+        if isinstance(project_id, uuid.UUID):
+            proj_uuid = project_id
+        else:
+            try:
+                proj_uuid = uuid.UUID(str(project_id))
+            except (ValueError, TypeError) as exc:
+                raise ValidationError(
+                    "Invalid project_id format.", details={"project_id": str(project_id)}
+                ) from exc
+
+        # Ownership verification (BUG-003): Ensure project exists and belongs to owner_id
+        project = db.query(Project).filter_by(id=proj_uuid, owner_id=owner_id).first()
+        if project is None:
+            raise NotFoundError("Project not found.", details={"project_id": str(proj_uuid)})
+
     asset = Asset(
         owner_id=owner_id,
-        project_id=project_id,
+        project_id=proj_uuid,
         kind=AssetKind(kind),
         filename=_safe_name(filename),
         storage_path="",  # Filled in once the bytes land.
@@ -82,7 +99,7 @@ def request_upload(
         owner_id=owner_id,
         asset_id=asset.id,
         filename=filename,
-        project_id=project_id,
+        project_id=proj_uuid,
     )
     asset.storage_path = f"{bucket}/{key}"
     db.add(asset)

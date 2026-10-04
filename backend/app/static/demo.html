@@ -1019,26 +1019,45 @@
           <span class="badge">Local Secure Storage</span>
         </div>
 
-        <div class="highlight-box" style="border:3px dashed var(--ink); text-align:center; padding:36px; background:#fff; cursor:pointer;" onclick="simulateUpload()">
-          <div style="font-size:40px;">📁</div>
-          <div style="font-weight:700; font-size:17px; margin-top:8px;">Drag and drop raw dance takes here, or click to browse</div>
-          <div class="muted-text" style="margin-top:4px;">Supports MP4, MOV, ProRes up to 200 MB &middot; Magic-byte verified</div>
+        <!-- Hidden real file input -->
+        <input type="file" id="realFileInput" style="display:none;"
+               accept="video/mp4,video/quicktime,video/webm,audio/mpeg,audio/wav,audio/mp4,image/jpeg,image/png,image/webp,text/plain,application/pdf" />
+
+        <div id="uploadDropZone" class="highlight-box" style="border:3px dashed var(--ink); text-align:center; padding:36px; background:#fff; cursor:pointer; transition:all 0.2s;" onclick="triggerFileSelect()">
+          <div style="font-size:40px;" id="uploadIcon">📁</div>
+          <div style="font-weight:700; font-size:17px; margin-top:8px;" id="uploadMainText">Drag and drop raw dance takes here, or click to browse</div>
+          <div class="muted-text" style="margin-top:4px;" id="uploadSubText">Supports MP4, MOV, WebM, MP3, WAV, JPG, PNG up to 200 MB &middot; Magic-byte verified</div>
         </div>
 
-        <div id="uploadChecklist" style="margin-top:16px;">
+        <!-- Upload progress (hidden by default) -->
+        <div id="uploadProgress" style="display:none; margin-top:16px;">
+          <div class="highlight-box" style="background:#fff; margin:0;">
+            <div class="row-between" style="margin-bottom:8px;">
+              <strong id="uploadFileName">Uploading...</strong>
+              <span class="badge" id="uploadStatusBadge">UPLOADING</span>
+            </div>
+            <div style="background:var(--paper); border:2px solid var(--ink); height:28px; position:relative; overflow:hidden;">
+              <div id="uploadProgressBar" style="background:var(--lime); height:100%; width:0%; transition:width 0.3s ease;"></div>
+              <span id="uploadProgressText" style="position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); font-weight:700; font-size:12px;">0%</span>
+            </div>
+            <div class="muted-text" style="margin-top:4px;" id="uploadSizeText"></div>
+          </div>
+        </div>
+
+        <div id="uploadChecklist" style="margin-top:16px; display:none;">
           <h4 style="font-size:13px; text-transform:uppercase; margin-bottom:8px;">Processing Pipeline Status</h4>
           <div class="highlight-box" style="background:#fff; margin:0; display:flex; flex-direction:column; gap:8px;">
             <div class="row-between">
               <span>1. Magic-byte MIME type validation</span>
-              <span class="badge">VERIFIED</span>
+              <span class="badge" id="checkMime">PENDING</span>
             </div>
             <div class="row-between">
-              <span>2. Audio track extraction &amp; Whisper STT</span>
-              <span class="badge">DONE</span>
+              <span>2. File stored to local secure storage</span>
+              <span class="badge" id="checkStorage">PENDING</span>
             </div>
             <div class="row-between">
-              <span>3. OpenCV Cut Detection (Analysis Stride: 6 frames)</span>
-              <span class="badge">4 SCENES FOUND</span>
+              <span>3. Upload completion confirmed</span>
+              <span class="badge" id="checkComplete">PENDING</span>
             </div>
           </div>
         </div>
@@ -1668,20 +1687,194 @@
     toast("Hook #" + (idx + 1) + " selected & saved to script!");
   };
 
-  window.simulateUpload = async function() {
-    toast("Requesting upload reservation from Asset Pipeline...");
-    const res = await apiCall("POST", "/api/assets/upload-url", {
-      filename: "dance_take_01.mp4",
-      mime: "video/mp4",
-      size_bytes: 45200000,
-      kind: "video"
-    });
-    if (res && res.upload_url) {
-      toast("Upload URL signed & magic bytes validated!");
-    } else {
-      toast("Raw dance takes uploaded & magic-byte verified!");
-    }
+  // ---------- REAL FILE UPLOAD FLOW ----------
+
+  function humanFileSize(bytes) {
+    if (bytes < 1024) return bytes + " B";
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
+    return (bytes / (1024 * 1024)).toFixed(1) + " MB";
+  }
+
+  // Click to open file picker
+  window.triggerFileSelect = function() {
+    document.getElementById("realFileInput").click();
   };
+
+  // File input change handler
+  document.getElementById("realFileInput").addEventListener("change", function(e) {
+    if (e.target.files && e.target.files.length > 0) {
+      handleFileUpload(e.target.files[0]);
+    }
+  });
+
+  // Drag & drop support
+  (function setupDragDrop() {
+    const zone = document.getElementById("uploadDropZone");
+    if (!zone) return;
+    zone.addEventListener("dragover", function(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      zone.style.borderColor = "var(--lime)";
+      zone.style.background = "#F0FFD0";
+    });
+    zone.addEventListener("dragleave", function(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      zone.style.borderColor = "var(--ink)";
+      zone.style.background = "#fff";
+    });
+    zone.addEventListener("drop", function(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      zone.style.borderColor = "var(--ink)";
+      zone.style.background = "#fff";
+      if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+        handleFileUpload(e.dataTransfer.files[0]);
+      }
+    });
+  })();
+
+  async function handleFileUpload(file) {
+    const maxBytes = 200 * 1024 * 1024;
+    if (file.size > maxBytes) {
+      toast("Error: File is too large (max 200 MB).");
+      return;
+    }
+    if (file.size === 0) {
+      toast("Error: The selected file is empty.");
+      return;
+    }
+
+    // Determine asset kind from mime
+    let kind = "video";
+    if (file.type.startsWith("audio/")) kind = "audio";
+    else if (file.type.startsWith("image/")) kind = "image";
+    else if (file.type === "text/plain") kind = "script";
+    else if (file.type === "application/pdf") kind = "reference";
+
+    // Show progress UI
+    document.getElementById("uploadProgress").style.display = "block";
+    document.getElementById("uploadChecklist").style.display = "block";
+    document.getElementById("uploadFileName").textContent = file.name;
+    document.getElementById("uploadSizeText").textContent = humanFileSize(file.size);
+    document.getElementById("uploadStatusBadge").textContent = "RESERVING";
+    document.getElementById("uploadStatusBadge").style.background = "var(--cyan)";
+    document.getElementById("uploadProgressBar").style.width = "0%";
+    document.getElementById("uploadProgressText").textContent = "0%";
+
+    // Reset checklist
+    document.getElementById("checkMime").textContent = "PENDING";
+    document.getElementById("checkStorage").textContent = "PENDING";
+    document.getElementById("checkComplete").textContent = "PENDING";
+
+    // Update drop zone appearance
+    document.getElementById("uploadIcon").textContent = "⏳";
+    document.getElementById("uploadMainText").textContent = "Uploading: " + file.name;
+    document.getElementById("uploadSubText").textContent = humanFileSize(file.size) + " · " + file.type;
+
+    toast("Step 1/3: Requesting upload reservation...");
+
+    // Step 1: Request upload URL
+    const projectId = localStorage.getItem("current_project_id") || null;
+    const reserveBody = {
+      filename: file.name,
+      mime: file.type || "application/octet-stream",
+      size_bytes: file.size,
+      kind: kind
+    };
+    if (projectId) reserveBody.project_id = projectId;
+
+    const ticket = await apiCall("POST", "/api/assets/upload-url", reserveBody);
+
+    if (!ticket || !ticket.upload_url) {
+      const errMsg = (ticket && ticket.error && ticket.error.message) ? ticket.error.message : "Could not reserve upload slot.";
+      toast("Upload failed: " + errMsg);
+      document.getElementById("uploadStatusBadge").textContent = "FAILED";
+      document.getElementById("uploadStatusBadge").style.background = "var(--coral)";
+      document.getElementById("uploadIcon").textContent = "❌";
+      document.getElementById("uploadMainText").textContent = "Upload failed – click to try again";
+      document.getElementById("uploadSubText").textContent = errMsg;
+      return;
+    }
+
+    document.getElementById("checkMime").textContent = "VERIFIED";
+    document.getElementById("checkMime").style.background = "var(--lime)";
+    toast("Step 2/3: Uploading bytes to secure storage...");
+    document.getElementById("uploadStatusBadge").textContent = "UPLOADING";
+
+    // Step 2: PUT the actual file bytes to the signed URL
+    try {
+      const xhr = new XMLHttpRequest();
+      const uploadPromise = new Promise(function(resolve, reject) {
+        xhr.upload.addEventListener("progress", function(e) {
+          if (e.lengthComputable) {
+            const pct = Math.round((e.loaded / e.total) * 100);
+            document.getElementById("uploadProgressBar").style.width = pct + "%";
+            document.getElementById("uploadProgressText").textContent = pct + "%";
+          }
+        });
+        xhr.addEventListener("load", function() {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            resolve();
+          } else {
+            reject(new Error("Upload returned HTTP " + xhr.status));
+          }
+        });
+        xhr.addEventListener("error", function() { reject(new Error("Network error during upload")); });
+        xhr.addEventListener("abort", function() { reject(new Error("Upload aborted")); });
+      });
+
+      xhr.open("PUT", ticket.upload_url, true);
+      xhr.setRequestHeader("Content-Type", file.type || "application/octet-stream");
+      xhr.send(file);
+      await uploadPromise;
+    } catch (uploadErr) {
+      toast("Upload failed: " + uploadErr.message);
+      document.getElementById("uploadStatusBadge").textContent = "FAILED";
+      document.getElementById("uploadStatusBadge").style.background = "var(--coral)";
+      document.getElementById("uploadIcon").textContent = "❌";
+      document.getElementById("uploadMainText").textContent = "Upload failed – click to try again";
+      document.getElementById("uploadSubText").textContent = uploadErr.message;
+      return;
+    }
+
+    document.getElementById("checkStorage").textContent = "STORED";
+    document.getElementById("checkStorage").style.background = "var(--lime)";
+    document.getElementById("uploadProgressBar").style.width = "100%";
+    document.getElementById("uploadProgressText").textContent = "100%";
+    toast("Step 3/3: Confirming upload & queuing processing...");
+    document.getElementById("uploadStatusBadge").textContent = "CONFIRMING";
+
+    // Step 3: Complete the upload
+    const complete = await apiCall("POST", "/api/assets/complete", {
+      asset_id: ticket.asset_id
+    });
+
+    if (complete && (complete.asset_id || complete.job_id)) {
+      document.getElementById("checkComplete").textContent = "DONE";
+      document.getElementById("checkComplete").style.background = "var(--lime)";
+      document.getElementById("uploadStatusBadge").textContent = "✓ COMPLETE";
+      document.getElementById("uploadStatusBadge").style.background = "var(--lime)";
+      document.getElementById("uploadIcon").textContent = "✅";
+      document.getElementById("uploadMainText").textContent = file.name + " uploaded successfully!";
+      document.getElementById("uploadSubText").textContent = "Asset ID: " + ticket.asset_id;
+      localStorage.setItem("last_uploaded_asset_id", ticket.asset_id);
+      toast("Upload complete! Asset " + ticket.asset_id.substring(0, 8) + "... is ready for processing.");
+    } else {
+      const errMsg = (complete && complete.error && complete.error.message) ? complete.error.message : "Completion step failed.";
+      document.getElementById("checkComplete").textContent = "WARN";
+      document.getElementById("checkComplete").style.background = "var(--coral)";
+      document.getElementById("uploadStatusBadge").textContent = "UPLOADED";
+      document.getElementById("uploadStatusBadge").style.background = "var(--lime)";
+      document.getElementById("uploadIcon").textContent = "⚠️";
+      document.getElementById("uploadMainText").textContent = file.name + " stored, confirmation pending";
+      document.getElementById("uploadSubText").textContent = errMsg;
+      toast("File uploaded but confirmation returned a warning: " + errMsg);
+    }
+  }
+
+  // Keep legacy simulateUpload for backward compat (in case anything else calls it)
+  window.simulateUpload = function() { triggerFileSelect(); };
 
   window.renderVideoExport = async function() {
     toast("Compiling 9:16 vertical render with burnt-in karaoke captions...");

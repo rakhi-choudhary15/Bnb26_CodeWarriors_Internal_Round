@@ -9,89 +9,11 @@ from __future__ import annotations
 
 import json
 import uuid
-from collections.abc import Iterator
 from pathlib import Path
 
-import pytest
-from alembic import command
-from alembic.config import Config
 from fastapi.testclient import TestClient
-from sqlalchemy import Engine, create_engine, event
-from sqlalchemy.orm import Session, sessionmaker
-
-from app.core import db as db_module
-from app.core.models import Base
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
-
-
-def _stamp_head(engine: Engine) -> None:
-    """Record the migration revision on a database built with `create_all`."""
-    config = Config(str(BACKEND_ROOT / "alembic.ini"))
-    config.set_main_option("script_location", str(BACKEND_ROOT / "migrations"))
-    raw_url = engine.url.render_as_string(hide_password=False).replace("%", "%%")
-    config.set_main_option("sqlalchemy.url", raw_url)
-    command.stamp(config, "head")
-
-
-@pytest.fixture
-def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
-    """A TestClient bound to a throwaway SQLite file.
-
-    The engine is rebuilt per test so no state leaks between them; Pydantic
-    settings are frozen because `app.core.db` reads them at import time.
-    """
-    url = f"sqlite:///{(tmp_path / 'api.db').as_posix()}"
-    engine = create_engine(url, connect_args={"check_same_thread": False})
-
-    @event.listens_for(engine, "connect")
-    def _fk_on(dbapi_connection, _record):  # noqa: ANN001 - SQLAlchemy hook signature
-        cursor = dbapi_connection.cursor()
-        cursor.execute("PRAGMA foreign_keys=ON")
-        cursor.close()
-
-    testing_session = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
-    monkeypatch.setattr(db_module, "SessionLocal", testing_session)
-    monkeypatch.setattr(db_module, "engine", engine)
-    Base.metadata.create_all(engine)
-    # The lifespan runs real migrations on startup. Stamp this throwaway database
-    # as being at head so that startup is a no-op instead of trying to create the
-    # same tables a second time.
-    _stamp_head(engine)
-
-    from app.main import app
-
-    # Re-resolve the dependency so routes use the patched session factory.
-    app.dependency_overrides[db_module.get_db] = _override_session(testing_session)
-    with TestClient(app) as test_client:
-        yield test_client
-    _drain_jobs()
-    app.dependency_overrides.clear()
-    engine.dispose()
-
-
-def _drain_jobs() -> None:
-    """Let in-flight worker threads finish before the temp database disappears.
-
-    The thread queue is a process-wide singleton, so a job still running when the
-    fixture tore down would fail against a deleted database.
-    """
-    from app.core.jobs import get_queue
-
-    queue = get_queue()
-    if hasattr(queue, "drain_for_tests"):
-        queue.drain_for_tests(timeout=10.0)  # type: ignore[attr-defined]
-
-
-def _override_session(factory: sessionmaker[Session]):
-    def _get_db():
-        session = factory()
-        try:
-            yield session
-        finally:
-            session.close()
-
-    return _get_db
 
 
 def _headers(owner: uuid.UUID) -> dict[str, str]:
@@ -499,6 +421,73 @@ def test_asset_is_not_visible_to_another_owner(client: TestClient) -> None:
     assert client.get(f"/api/assets/{asset_id}", headers=_headers(mine)).status_code == 200
     assert client.get(f"/api/assets/{asset_id}", headers=_headers(theirs)).status_code == 404
     assert client.delete(f"/api/assets/{asset_id}", headers=_headers(theirs)).status_code == 404
+
+
+def test_upload_ticket_with_project_id_succeeds(client: TestClient) -> None:
+    owner = uuid.uuid4()
+    res = client.post(
+        "/api/creation/intents",
+        headers=_headers(owner),
+        json={"primary_text": "Dance reel for project upload test"},
+    )
+    assert res.status_code == 201
+    project_id = res.json()["project_id"]
+
+    ticket = client.post(
+        "/api/assets/upload-url",
+        headers=_headers(owner),
+        json={
+            "filename": "clip_with_project.mp4",
+            "mime": "video/mp4",
+            "size_bytes": 2048,
+            "kind": "video",
+            "project_id": project_id,
+        },
+    )
+    assert ticket.status_code == 201, ticket.text
+    body = ticket.json()
+    assert body["method"] == "PUT"
+    assert project_id in body["key"]
+
+
+def test_upload_ticket_for_unowned_project_rejected(client: TestClient) -> None:
+    owner_a = uuid.uuid4()
+    owner_b = uuid.uuid4()
+    res = client.post(
+        "/api/creation/intents",
+        headers=_headers(owner_b),
+        json={"primary_text": "Owner B project"},
+    )
+    assert res.status_code == 201
+    project_b_id = res.json()["project_id"]
+
+    ticket = client.post(
+        "/api/assets/upload-url",
+        headers=_headers(owner_a),
+        json={
+            "filename": "clip.mp4",
+            "mime": "video/mp4",
+            "size_bytes": 1024,
+            "kind": "video",
+            "project_id": project_b_id,
+        },
+    )
+    assert ticket.status_code == 404, "Cross-owner project upload must be refused with 404"
+
+
+def test_upload_ticket_with_invalid_project_id_rejected(client: TestClient) -> None:
+    ticket = client.post(
+        "/api/assets/upload-url",
+        headers=_headers(uuid.uuid4()),
+        json={
+            "filename": "clip.mp4",
+            "mime": "video/mp4",
+            "size_bytes": 1024,
+            "kind": "video",
+            "project_id": "not-a-valid-uuid",
+        },
+    )
+    assert ticket.status_code == 422
 
 
 # ---------------------------------------------------------------------------

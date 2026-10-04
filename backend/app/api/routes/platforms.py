@@ -15,7 +15,6 @@ from pydantic import BaseModel, Field
 from app.api.deps import CurrentOwner, DbSession
 from app.core.errors import NotFoundError, ValidationError
 from app.core.models import (
-    AnalyticsRecord,
     ImplStatus,
     Platform,
     PlatformVariant,
@@ -53,8 +52,8 @@ def adapt_platform_variants(
 ) -> dict[str, Any]:
     try:
         p_uuid = uuid.UUID(body.project_id)
-    except ValueError:
-        raise ValidationError("Invalid project_id format.")
+    except ValueError as exc:
+        raise ValidationError("Invalid project_id format.") from exc
 
     existing = db.query(PlatformVariant).filter_by(project_id=p_uuid, owner_id=owner_id).all()
     if existing:
@@ -162,8 +161,8 @@ def update_variant(
 ) -> dict[str, Any]:
     try:
         v_uuid = uuid.UUID(variant_id)
-    except ValueError:
-        raise ValidationError("Invalid variant_id format.")
+    except ValueError as exc:
+        raise ValidationError("Invalid variant_id format.") from exc
 
     var = db.query(PlatformVariant).filter_by(id=v_uuid, owner_id=owner_id).first()
     if not var:
@@ -196,8 +195,8 @@ def create_publishing_job(
 ) -> dict[str, Any]:
     try:
         v_uuid = uuid.UUID(body.variant_id)
-    except ValueError:
-        raise ValidationError("Invalid variant_id format.")
+    except ValueError as exc:
+        raise ValidationError("Invalid variant_id format.") from exc
 
     var = db.query(PlatformVariant).filter_by(id=v_uuid, owner_id=owner_id).first()
     if not var:

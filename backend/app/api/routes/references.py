@@ -40,8 +40,8 @@ def create_reference(
     if body.asset_id:
         try:
             asset_uuid = uuid.UUID(body.asset_id)
-        except ValueError:
-            raise ValidationError("Invalid asset_id format.")
+        except ValueError as exc:
+            raise ValidationError("Invalid asset_id format.") from exc
 
     ref = Reference(
         owner_id=owner_id,
@@ -71,8 +71,8 @@ def analyze_reference(
 ) -> dict[str, Any]:
     try:
         r_uuid = uuid.UUID(body.reference_id)
-    except ValueError:
-        raise ValidationError("Invalid reference_id format.")
+    except ValueError as exc:
+        raise ValidationError("Invalid reference_id format.") from exc
 
     ref = db.query(Reference).filter_by(id=r_uuid, owner_id=owner_id).first()
     if not ref:
@@ -126,8 +126,8 @@ def get_reference_dna(
 ) -> dict[str, Any]:
     try:
         r_uuid = uuid.UUID(reference_id)
-    except ValueError:
-        raise ValidationError("Invalid reference_id format.")
+    except ValueError as exc:
+        raise ValidationError("Invalid reference_id format.") from exc
 
     dna_rec = db.query(ReferenceDNA).filter_by(reference_id=r_uuid).first()
     if not dna_rec:

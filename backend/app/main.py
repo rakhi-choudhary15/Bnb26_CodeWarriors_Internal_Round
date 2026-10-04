@@ -28,6 +28,7 @@ from app.api.routes import (
     platforms,
     projects,
     references,
+    storage,
 )
 from app.core.config import settings
 from app.core.db import migrate_to_head
@@ -102,6 +103,7 @@ def create_app() -> FastAPI:
     app.include_router(intelligence.router)
     app.include_router(references.router)
     app.include_router(platforms.router)
+    app.include_router(storage.router)
     _mount_demo(app)
     return app
 
@@ -123,7 +125,7 @@ def _mount_demo(app: FastAPI) -> None:
     def demo_page() -> FileResponse:
         return FileResponse(page, media_type="text/html")
 
-    app.mount("/demo", StaticFiles(directory=str(page.parent), html=True), name="demo")
+    app.mount("/static", StaticFiles(directory=str(page.parent)), name="static")
 
 
 def _startup_checks() -> None:

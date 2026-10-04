@@ -1,15 +1,19 @@
 import { useState, useEffect } from 'react';
 
+const API_BASE = (import.meta.env.VITE_API_URL as string) || '';
+const MASTER_SUITE_URL = (import.meta.env.VITE_API_URL as string) || 'http://127.0.0.1:8000';
+
 export default function App() {
   const [health, setHealth] = useState<any>(null);
   const [intent, setIntent] = useState('I want to create a 30-second energetic dance Reel');
   const [details, setDetails] = useState('Bollywood-inspired, Gen-Z audience, high energy');
+  const [ownerId] = useState('00000000-0000-0000-0000-000000000001');
   const [step, setStep] = useState(1);
   const [result, setResult] = useState<any>(null);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    fetch('/api/health')
+    fetch(`${API_BASE}/api/health`)
       .then(res => res.json())
       .then(data => setHealth(data))
       .catch(() => setHealth({ status: 'offline' }));
@@ -18,10 +22,10 @@ export default function App() {
   const handleAnalyze = async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/creation/intents', {
+      const res = await fetch(`${API_BASE}/api/creation/intents`, {
         method: 'POST',
         headers: {
-          'Authorization': 'Bearer dev:00000000-0000-0000-0000-000000000001',
+          'Authorization': `Bearer dev:${ownerId}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ primary_text: intent, details_text: details }),
@@ -50,7 +54,7 @@ export default function App() {
           <span className="badge" style={{ background: health?.ok || health?.status === 'ok' ? 'var(--lime)' : 'var(--cyan)' }}>
             API: {health?.status || 'Active'}
           </span>
-          <a href="http://127.0.0.1:8000/" target="_blank" rel="noreferrer" className="btn" style={{ fontSize: '12px', padding: '6px 14px' }}>
+          <a href={`${MASTER_SUITE_URL}/`} target="_blank" rel="noreferrer" className="btn" style={{ fontSize: '12px', padding: '6px 14px' }}>
             Open Master Suite &rarr;
           </a>
         </div>
@@ -112,7 +116,7 @@ export default function App() {
               {JSON.stringify(result, null, 2)}
             </pre>
             <div style={{ marginTop: '16px', display: 'flex', justifyContent: 'flex-end' }}>
-              <a href="http://127.0.0.1:8000/" target="_blank" rel="noreferrer" className="btn">
+              <a href={`${MASTER_SUITE_URL}/`} target="_blank" rel="noreferrer" className="btn">
                 Launch 14-Stage Visual Experience &rarr;
               </a>
             </div>
